@@ -634,6 +634,11 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
                 payload.errorMessage or "",
                 webhook_received_time.isoformat()
             )
+
+            # Если причина "Payment window is opened but not completed", только логируем и выходим
+            if payload.errorMessage == "Payment window is opened but not completed":
+                return {"status": "success", "message": "Ignored 'window opened but not completed' failure"}
+
             bot.send_message(
                 user_id,
                 f"❌ К сожалению, оплата подписки '{payload.product.title}' не удалась.\n"

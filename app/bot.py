@@ -83,6 +83,20 @@ default_message = """Добро пожаловать в канал с бурят
 # Получаем сообщение из переменной окружения или используем значение по умолчанию
 MAIN_MESSAGE = os.getenv("MAIN_MESSAGE", default_message).replace('\\n', '\n')
 
+# Получаем текст "О канале" из переменной окружения
+DEFAULT_ABOUT_TEXT = """В ЗАКРЫТОМ КАНАЛЕ:
+
+✅ Хиты на бурятском — «Шрек», «Кунг-фу Панда» и другие любимые мультфильмы. Мы постоянно пополняем коллекцию.
+
+✅ Вы — наш генеральный партнёр. Ваша подписка помогает создавать новые мультфильмы и фильмы на бурятском языке.
+
+Вместе мы создадим индустрию бурятского кино.
+Сделаем родной язык — модным, сильным и вечным."""
+ABOUT_TEXT = os.getenv("ABOUT_TEXT", DEFAULT_ABOUT_TEXT).replace('\\n', '\n')
+
+PAYMENT_DOMAIN = os.getenv("PAYMENT_DOMAIN", "buryat-films.ru")
+INTERNAL_WEBHOOK_URL = os.getenv("INTERNAL_WEBHOOK_URL", "http://localhost:8000")
+
 # Обновляем словари для переводов
 PERIOD_TRANSLATIONS = {
     "MONTHLY": "1 месяц",
@@ -787,19 +801,10 @@ def show_about_callback(call):
     except apihelper.ApiTelegramException as e:
         logger.warning(f"Не удалось удалить сообщение {call.message.message_id} в чате {call.message.chat.id}: {e}")
     
-    about_text = """В ЗАКРЫТОМ КАНАЛЕ:
-
-✅ Хиты на бурятском — «Шрек», «Кунг-фу Панда» и другие любимые мультфильмы. Мы постоянно пополняем коллекцию.
-
-✅ Вы — наш генеральный партнёр. Ваша подписка помогает создавать новые мультфильмы и фильмы на бурятском языке.
-
-Вместе мы создадим индустрию бурятского кино.
-Сделаем родной язык — модным, сильным и вечным."""
-
     # Отправляем информацию о канале
     bot.send_message(
         call.message.chat.id,
-        about_text
+        ABOUT_TEXT
     )
     
     # Проверяем статус подписки
@@ -1016,25 +1021,24 @@ def process_payment_callback(call):
 def shorten_payment_url(payment_url: str) -> str:
     try:
         # URL вашего webhook сервиса
-        webhook_url = "http://localhost:8000"  # Измените на актуальный URL
-        
+        webhook_url = INTERNAL_WEBHOOK_URL
+
         # Данные для авторизации
         auth = (USERNAME, PASSWORD)  # Используйте те же креды, что и в main.py
-        
+
         # Отправляем запрос на сокращение
         response = requests.post(
             f"{webhook_url}/shorten",
             json={"original_url": payment_url},
             auth=auth
         )
-        
+
         if response.status_code == 200:
             short_code = response.json()["short_code"]
-            return f"https://buryat-films.ru/payment/{short_code}"
+            return f"https://{PAYMENT_DOMAIN}/payment/{short_code}"
         else:
             logger.error(f"Ошибка при сокращении ссылки: {response.text}")
-            return payment_url
-            
+            return payment_url            
     except Exception as e:
         logger.error(f"Ошибка при сокращении ссылки: {str(e)}")
 
