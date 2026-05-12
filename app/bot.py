@@ -28,6 +28,7 @@ logging.getLogger("payment_bot").setLevel(logging.DEBUG)
 # Получение настроек из переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 LAVA_API_KEY = os.getenv("LAVA_API_KEY")
+LAVA_OFFER_ID = os.getenv("LAVA_OFFER_ID") # Конкретный ID оффера для этого контейнера
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 ADMIN_ID = os.getenv("ADMIN_ID")
 DB_PATH = DATA_DIR / "lava_payments.db"
@@ -140,6 +141,10 @@ def get_available_subscriptions():
         for item in data.get("items", []):
             if item.get("type") == "SUBSCRIPTION":
                 for offer in item.get("offers", []):
+                    # Если задан конкретный оффер, показываем только его
+                    if LAVA_OFFER_ID and offer["id"] != LAVA_OFFER_ID:
+                        continue
+                        
                     # Группируем цены по периодичности
                     prices_by_period = {}
                     for price in offer["prices"]:
@@ -839,56 +844,69 @@ def show_status_callback(call):
             logger.warning(f"Не удалось удалить сообщение {call.message.message_id} в чате {call.message.chat.id}: {e}")
         
         user_id = call.from_user.id
-        subscription = check_subscription_status(user_id)
+        all_subs = get_all_user_subscriptions(user_id)
         
-        if subscription["status"] == "error":
-            bot.send_message(
-                call.message.chat.id,
-                f"❌ Произошла ошибка при проверке статуса подписки: {subscription['error']}.\n"
-                f"Пожалуйста, попробуйте позже или обратитесь в поддержку."
-            )
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu'))
+        if all_subs:
+            # Показываем информацию по каждой подписке
+            for sub in all_subs:
+                # Получаем дату окончания подписки
+                end_date = sub.get("end_date")
+                end_date_str = datetime.fromisoformat(end_date.replace('Z', '+00:00')).strftime("%d.%m.%Y") if end_date else "не указана"
+                
+                # Формируем сообщение в зависимости от статуса
+                if sub["status"] == "active":
+                    status_text = "✅ У вас активная подписка!"
+                else:  # cancelled
+                    status_text = "ℹ️ Автопродление подписки отключено. "
+                
+                # Пытаемся найти название канала в конфиге
+                channel_name = sub["channel_id"]
+                current_channel_link = CHANNEL_LINK
+                for conf in SUBSCRIPTIONS_CONFIG.values():
+                    if conf['channel_id'] == str(sub["channel_id"]):
+                        # Можно было бы хранить название канала в конфиге, но пока используем ID
+                        current_channel_link = conf.get('channel_link', CHANNEL_LINK)
+                        break
+
+                bot.send_message(
+                    call.message.chat.id,
+                    f"📺 <b>Канал:</b> {channel_name}\n"
+                    f"{status_text}\n\n"
+                    f"Доступ действует до: {end_date_str}",
+                    parse_mode="HTML"
+                )
+                
+                # Показываем меню с кнопками управления для этой подписки
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if current_channel_link:
+                    btn_channel = types.InlineKeyboardButton('📺 Перейти в канал', url=current_channel_link)
+                    markup.add(btn_channel)
+                
+                # Показываем кнопку отмены подписки только если статус active
+                if sub["status"] == "active":
+                    btn_cancel = types.InlineKeyboardButton('❌ Отключить автопродление', 
+                                                      callback_data=f"cancel_{sub['contract_id']}")
+                    markup.add(btn_cancel)
+                
+                bot.send_message(
+                    call.message.chat.id,
+                    "Управление подпиской:",
+                    reply_markup=markup
+                )
+            
+            # В конце добавляем общие кнопки
+            final_markup = types.InlineKeyboardMarkup(row_width=1)
+            btn_support = types.InlineKeyboardButton('📞 Поддержка', url=f"https://t.me/{SUPPORT_USERNAME}")
+            btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
+            final_markup.add(btn_support, btn_menu)
+            
             bot.send_message(
                 call.message.chat.id,
                 "⠀⠀⠀⠀⠀Меню подписчика⠀⠀⠀⠀⠀",
-                reply_markup=markup
+                reply_markup=final_markup
             )
             return
 
-        if subscription["status"] in ["active", "cancelled"]:
-            # Получаем дату окончания подписки
-            end_date = subscription.get("end_date")
-            end_date_str = datetime.fromisoformat(end_date.replace('Z', '+00:00')).strftime("%d.%m.%Y") if end_date else "не указана"
-            
-            # Формируем сообщение в зависимости от статуса
-            if subscription["status"] == "active":
-                status_text = "✅ У вас активная подписка!"
-            else:  # cancelled
-                status_text = "ℹ️ Автопродление подписки отключено. "
-            
-            # Отправляем информацию о подписке
-            bot.send_message(
-                call.message.chat.id,
-                f"{status_text}\n\n"
-                f"Доступ к каналу действует до: {end_date_str}"
-            )
-            
-            # Показываем меню с кнопками управления
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            btn_channel = types.InlineKeyboardButton('📺 Перейти в канал', url=CHANNEL_LINK)
-            markup.add(btn_channel)
-            
-            # Показываем кнопку отмены подписки только если статус active
-            if subscription["status"] == "active":
-                btn_cancel = types.InlineKeyboardButton('❌ Отключить автопродление', 
-                                                  callback_data=f"cancel_{subscription['contract_id']}")
-                markup.add(btn_cancel)
-            
-            btn_support = types.InlineKeyboardButton('📞 Поддержка', url=f"https://t.me/{SUPPORT_USERNAME}")
-            btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
-            markup.add(btn_support, btn_menu)
-            
         else:
             # Отправляем информацию об отсутствии подписки
             bot.send_message(
@@ -1339,6 +1357,8 @@ def check_subscription_expiration():
                                     )
                                 except Exception as e:
                                     logger.warning(f"Не удалось отправить напоминание пользователю {user_id}: {e}")
+
+
                     # Уведомления о скором окончании подписки
                     #elif days_left in NOTIFY_BEFORE_DAYS:
                         #bot.send_message(
@@ -1528,6 +1548,36 @@ def broadcast_command(message):
         logger.error(f"Ошибка при выполнении рассылки: {str(e)}")
         bot.reply_to(message, "❌ Произошла ошибка при выполнении рассылки.")
 
+
+# Команда для получения списка всех офферов (для админа)
+@bot.message_handler(commands=['get_offers'])
+def get_offers_command(message):
+    if str(message.from_user.id) != str(ADMIN_ID):
+        return
+
+    bot.reply_to(message, "🔍 Запрашиваю список подписок из Lava.top...")
+    
+    # Временно сбрасываем фильтр, чтобы увидеть все
+    global LAVA_OFFER_ID
+    old_filter = LAVA_OFFER_ID
+    LAVA_OFFER_ID = None
+    
+    subscriptions = get_available_subscriptions()
+    LAVA_OFFER_ID = old_filter
+    
+    if not subscriptions:
+        bot.send_message(message.chat.id, "❌ Подписки не найдены или ошибка API.")
+        return
+        
+    response = "📋 <b>Доступные подписки:</b>\n\n"
+    for sub in subscriptions:
+        response += f"🆔 <code>{sub['offer_id']}</code>\n"
+        response += f"📦 <b>{sub['name']}</b>\n"
+        response += f"📝 {sub['description'][:100]}...\n\n"
+        
+    response += "Скопируйте нужный ID и вставьте в <code>LAVA_OFFER_ID</code> в файле .env"
+    
+    bot.send_message(message.chat.id, response, parse_mode="HTML")
 
 # Обработчик для команды /subscribe
 @bot.message_handler(commands=['subscribe'])

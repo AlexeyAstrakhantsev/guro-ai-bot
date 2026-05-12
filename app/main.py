@@ -56,6 +56,7 @@ security = HTTPBasic()
 USERNAME = os.getenv("WEBHOOK_USERNAME", "admin")
 PASSWORD = os.getenv("WEBHOOK_PASSWORD", "password")
 DB_PATH = DATA_DIR / "lava_payments.db"
+LAVA_OFFER_ID = os.getenv("LAVA_OFFER_ID") # Конкретный ID оффера для этого контейнера
 
 # Модели данных
 class Product(BaseModel):
@@ -69,6 +70,7 @@ class WebhookPayload(BaseModel):
     eventType: str
     product: Product
     buyer: Buyer
+    offerId: Optional[str] = None # ID конкретного оффера
     contractId: str
     parentContractId: Optional[str] = None
     amount: Optional[float] = None
@@ -364,17 +366,25 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
         webhook_received_time = datetime.now(timezone.utc)
         
         # Парсим JSON
+        payload_dict = json.loads(raw_data)
         payload = WebhookPayload.parse_raw(raw_data)
+        
+        # Пытаемся достать offerId из разных мест (зависит от версии API Lava.top)
+        actual_offer_id = payload_dict.get("offerId") or payload_dict.get("product", {}).get("offerId") or payload_dict.get("product", {}).get("id")
+        
+        # Проверяем, относится ли этот платеж к данному боту (если задан LAVA_OFFER_ID)
+        if LAVA_OFFER_ID and actual_offer_id and str(actual_offer_id) != str(LAVA_OFFER_ID):
+            logger.info(f"Игнорируем вебхук: offerId {actual_offer_id} не совпадает с LAVA_OFFER_ID {LAVA_OFFER_ID}")
+            return {"status": "ignored", "message": "Offer ID mismatch"}
+            
         logger.info(
-            "Webhook parsed | event=%s user=%s amount=%s currency=%s payload_timestamp=%s webhook_received=%s contract=%s parent_contract=%s",
+            "Webhook parsed | event=%s user=%s offer=%s product='%s' amount=%s currency=%s",
             payload.eventType,
             payload.buyer.email.split('@')[0] if payload.buyer and payload.buyer.email else "",
+            actual_offer_id,
+            payload.product.title,
             str(payload.amount),
-            payload.currency or "",
-            payload.timestamp or payload.cancelledAt or "",
-            webhook_received_time.isoformat(),
-            payload.contractId,
-            payload.parentContractId or ""
+            payload.currency or ""
         )
         
         # Сохраняем в БД
@@ -550,6 +560,7 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
                 f"<b>Новая дата окончания:</b> {formatted_end_date}"
             )
             logger.info(f"Подписка пользователя {user_id} успешно продлена до {new_end_date}")
+
 
         elif payload.eventType == "subscription.cancelled": # Добавляем обработку отмены подписки
             logger.info(
