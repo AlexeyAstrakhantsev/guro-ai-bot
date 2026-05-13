@@ -1681,39 +1681,39 @@ def check_subscriptions_periodically():
 
 # Функция для запуска бота
 def run_bot():
-    try:
-        logger.info("Запуск бота...")
+    logger.info("Запуск бота...")
+    
+    # Проверяем наличие токена
+    if not BOT_TOKEN:
+        logger.error("Не указан токен бота (BOT_TOKEN). Бот не будет запущен.")
+        return
         
-        # Проверяем наличие токена
-        if not BOT_TOKEN:
-            logger.error("Не указан токен бота (BOT_TOKEN). Бот не будет запущен.")
-            return
-            
-        if not CHANNEL_ID:
-            logger.warning("Не указан ID канала (CHANNEL_ID). Функции работы с каналом будут недоступны.")
-        
-        # Запускаем периодическую проверку платежей в отдельном потоке
-        payment_thread = threading.Thread(target=check_payments_periodically)
-        payment_thread.daemon = True
-        payment_thread.start()
-        
-        # Запускаем периодическую проверку подписок в отдельном потоке
-        subscription_thread = threading.Thread(target=check_subscriptions_periodically)
-        subscription_thread.daemon = True
-        subscription_thread.start()
-        
-        # Запускаем бота с увеличенными таймаутами
-        # interval=3: увеличиваем интервал между запросами
-        # timeout=30: увеличиваем таймаут соединения
-        bot.polling(none_stop=True, interval=3, timeout=30)
-    except requests.exceptions.ReadTimeout as e:
-        logger.warning(f"Таймаут при обращении к Telegram API: {str(e)}. Перезапуск бота...")
-        time.sleep(5)  # Ожидаем 5 секунд перед повторным запуском
-        run_bot()  # Рекурсивно запускаем бота снова
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {str(e)}", exc_info=True)
-        time.sleep(10)  # Ожидаем 10 секунд перед повторным запуском
-        run_bot()  # Рекурсивно запускаем бота снова
+    if not CHANNEL_ID:
+        logger.warning("Не указан ID канала (CHANNEL_ID). Функции работы с каналом будут недоступны.")
+    
+    # Запускаем периодическую проверку платежей в отдельном потоке
+    payment_thread = threading.Thread(target=check_payments_periodically)
+    payment_thread.daemon = True
+    payment_thread.start()
+    
+    # Запускаем периодическую проверку подписок в отдельном потоке
+    subscription_thread = threading.Thread(target=check_subscriptions_periodically)
+    subscription_thread.daemon = True
+    subscription_thread.start()
+    
+    while True:
+        try:
+            # Запускаем бота с увеличенными таймаутами
+            # interval=3: увеличиваем интервал между запросами
+            # timeout=30: увеличиваем таймаут соединения
+            bot.polling(none_stop=True, interval=3, timeout=30)
+        except requests.exceptions.ReadTimeout as e:
+            logger.warning(f"Таймаут при обращении к Telegram API: {str(e)}. Перезапуск бота через 5 секунд...")
+            time.sleep(5)
+        except Exception as e:
+            logger.error(f"Ошибка при запуске бота: {str(e)}", exc_info=True)
+            logger.info("Перезапуск бота через 10 секунд...")
+            time.sleep(10)
 
 # Запуск бота в отдельном потоке
 if __name__ == "__main__":
