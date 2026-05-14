@@ -571,7 +571,7 @@ def notify_admin(message):
 
 
 # Функция для показа меню выбора периода подписки
-def show_subscription_menu(message):
+def show_subscription_menu(message, call=None):
     """
     Показывает меню выбора периода подписки
     """
@@ -581,32 +581,35 @@ def show_subscription_menu(message):
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
         markup.add(btn_menu)
-        
+
         try:
-            bot.edit_message_text(
-                "Произошла ошибка при получении списка подписок. Пожалуйста, попробуйте позже.",
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                reply_markup=markup
-            )
+            if call:
+                bot.edit_message_text(
+                    "Произошла ошибка при получении списка подписок. Пожалуйста, попробуйте позже.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    "Произошла ошибка при получении списка подписок. Пожалуйста, попробуйте позже.",
+                    reply_markup=markup
+                )
         except Exception as e:
-            bot.send_message(
-                message.chat.id,
-                "Произошла ошибка при получении списка подписок. Пожалуйста, попробуйте позже.",
-                reply_markup=markup
-            )
+            logger.error(f"Ошибка при отображении ошибки подписок: {e}")
         return
-    
+
     # Для каждой подписки создаем отдельное сообщение с кнопками периодов
     for sub in subscriptions:
         markup = types.InlineKeyboardMarkup(row_width=1)
-        
+
         # Создаем кнопки для каждого периода
         for price in sub["prices"]:
             period_text = PERIOD_TRANSLATIONS.get(price["periodicity"], price["periodicity"])
             rub_amount = price["currencies"].get("RUB", 0)
             button_text = f"{period_text} - {rub_amount} ₽"
-            
+
             # Сокращаем periodicity для callback_data
             short_period = {
                 "MONTHLY": "1m",
@@ -614,31 +617,39 @@ def show_subscription_menu(message):
                 "PERIOD_180_DAYS": "6m",
                 "PERIOD_YEAR": "1y"
             }.get(price["periodicity"], price["periodicity"])
-            
+
             callback_data = f"p|{sub['offer_id']}|{short_period}"
             markup.add(types.InlineKeyboardButton(text=button_text, callback_data=callback_data))
-        
+
         # Добавляем кнопку возврата в меню
         markup.add(types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu'))
-        
+
         message_text = f"<b>{sub['name']}</b>\n\n{sub['description']}\n\nВыберите период подписки:"
-        
+
         try:
-            bot.edit_message_text(
-                message_text,
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                reply_markup=markup,
-                parse_mode="HTML"
-            )
+            if call:
+                bot.edit_message_text(
+                    message_text,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup,
+                    parse_mode="HTML"
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    message_text,
+                    reply_markup=markup,
+                    parse_mode="HTML"
+                )
         except Exception as e:
+            logger.warning(f"Не удалось отредактировать сообщение, отправляем новое: {e}")
             bot.send_message(
                 message.chat.id,
                 message_text,
                 reply_markup=markup,
                 parse_mode="HTML"
             )
-
 # Функция для показа главного меню
 def show_main_menu(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -976,7 +987,37 @@ def show_status_callback(call):
 def process_main_menu(call):
     try:
         if call.data == 'show_subscribe':
-            subscribe_command(call.message)
+            # Правильно получаем ID пользователя
+            user_id = call.from_user.id
+            username = call.from_user.username or f"user_{user_id}"
+
+            logger.info(f"Пользователь {username} (ID: {user_id}) запросил оформление подписки через кнопку")
+
+            # Проверяем, есть ли уже активная подписка
+            subscription = check_subscription_status(user_id)
+            if subscription["status"] == "active":
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                btn_status = types.InlineKeyboardButton('ℹ️ Проверить статус', callback_data='show_status')
+                btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
+                markup.add(btn_status, btn_menu)
+
+                try:
+                    bot.edit_message_text(
+                        "У вас уже есть активная подписка!",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=markup
+                    )
+                except Exception as e:
+                    logger.warning(f"Не удалось отредактировать сообщение: {e}")
+                    bot.send_message(
+                        call.message.chat.id,
+                        "У вас уже есть активная подписка!",
+                        reply_markup=markup
+                    )
+                return
+
+            show_subscription_menu(call.message, call=call)
         elif call.data == 'show_status':
             show_status_callback(call)
         elif call.data == 'show_support':
@@ -993,6 +1034,11 @@ def process_main_menu(call):
                     show_alert=True
                 )
         elif call.data == 'show_menu':
+            try:
+                # Удаляем сообщение с кнопкой
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except Exception as e:
+                logger.warning(f"Не удалось удалить сообщение при возврате в меню: {e}")
             show_main_menu(call.message)
         
     except Exception as e:
