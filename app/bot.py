@@ -207,6 +207,9 @@ def get_available_subscriptions():
         if new_price_map:
             DYNAMIC_PRICE_MAP.update(new_price_map)
             logger.info(f"Обновлена динамическая карта цен: {len(DYNAMIC_PRICE_MAP)} записей")
+            # Выводим содержимое карты для проверки
+            map_content = ", ".join([f"{k}: {v}" for k, v in new_price_map.items()])
+            logger.info(f"Содержимое карты цен: {map_content}")
             
         return subscriptions
     except Exception as e:
