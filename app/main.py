@@ -402,7 +402,7 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
             )
             
             # Рассчитываем дату окончания подписки от момента получения webhook'а
-            periodicity = get_periodicity_by_amount(payload.amount)
+            periodicity = get_periodicity_by_amount(payload.amount, payload.currency)
             days_to_add = PERIOD_DAYS.get(periodicity, 30)
             subscription_end_date_dt = webhook_received_time + timedelta(days=days_to_add)
             subscription_end_date = subscription_end_date_dt.replace(tzinfo=subscription_end_date_dt.tzinfo or timezone.utc).isoformat()
@@ -490,8 +490,8 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
             # Используем время получения вебхука вместо ненадежного timestamp из payload
             event_time = webhook_received_time
 
-            # Определяем периодичность по сумме и рассчитываем длительность периода
-            periodicity = get_periodicity_by_amount(payload.amount)
+            # Определяем периодичность по сумме и валюте и рассчитываем длительность периода
+            periodicity = get_periodicity_by_amount(payload.amount, payload.currency)
             days_to_add = PERIOD_DAYS.get(periodicity, 30)
 
             # Продлеваем подписку от момента получения webhook'а, добавляя период подписки

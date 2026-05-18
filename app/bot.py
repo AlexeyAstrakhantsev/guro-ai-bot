@@ -68,22 +68,38 @@ PERIOD_DAYS = {
     "PERIOD_YEAR": 365
 }
 
-# Функция для определения периодичности по стоимости
+# Динамическая карта цен: {(currency, amount): periodicity}
+DYNAMIC_PRICE_MAP = {}
 
-def get_periodicity_by_amount(amount: float) -> str:
+def get_periodicity_by_amount(amount: float, currency: str = "RUB") -> str:
     """
-    Определяет периодичность подписки по стоимости
+    Определяет периодичность подписки по стоимости и валюте
     """
-    # Ищем точное совпадение цены
-    if amount in PRICE_PERIODICITY:
-        return PRICE_PERIODICITY[amount]
-    # Если точного совпадения нет, ищем ближайшую цену
-    closest_price = min(PRICE_PERIODICITY.keys(), key=lambda x: abs(x - amount))
-    price_difference = abs(closest_price - amount)
-    if price_difference <= closest_price * 0.1:
-        logger.info(f"Цена {amount} близка к {closest_price}, используем периодичность {PRICE_PERIODICITY[closest_price]}")
-        return PRICE_PERIODICITY[closest_price]
-    logger.warning(f"Не удалось определить периодичность для цены {amount}, используем MONTHLY")
+    currency = str(currency).upper()
+    amount = float(amount)
+    
+    # 1. Сначала ищем в динамической карте (обновляется из API Lava)
+    if (currency, amount) in DYNAMIC_PRICE_MAP:
+        logger.info(f"Найдено в динамической карте: {amount} {currency} -> {DYNAMIC_PRICE_MAP[(currency, amount)]}")
+        return DYNAMIC_PRICE_MAP[(currency, amount)]
+    
+    # 2. Если в карте нет (например, бот только запустился), пробуем обновить карту
+    logger.info(f"Цена {amount} {currency} не найдена в карте, обновляем данные из API...")
+    get_available_subscriptions()
+    
+    if (currency, amount) in DYNAMIC_PRICE_MAP:
+        return DYNAMIC_PRICE_MAP[(currency, amount)]
+
+    # 3. Фолбэк на старую логику для RUB (если карта пуста или API недоступно)
+    if currency == "RUB":
+        if amount in PRICE_PERIODICITY:
+            return PRICE_PERIODICITY[amount]
+        # Ищем ближайшую цену
+        closest_price = min(PRICE_PERIODICITY.keys(), key=lambda x: abs(x - amount))
+        if abs(closest_price - amount) <= closest_price * 0.1:
+            return PRICE_PERIODICITY[closest_price]
+            
+    logger.warning(f"Не удалось определить периодичность для {amount} {currency}, используем MONTHLY")
     return "MONTHLY"
 
 # В начале файла, где определяются другие константы
@@ -131,6 +147,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 # Функция для получения списка доступных подписок
 def get_available_subscriptions():
+    global DYNAMIC_PRICE_MAP
     url = "https://gate.lava.top/api/v2/products"
     params = {
         "contentCategories": "PRODUCT",
@@ -147,20 +164,29 @@ def get_available_subscriptions():
         data = response.json()
         
         subscriptions = []
+        new_price_map = {}
+
         for item in data.get("items", []):
             if item.get("type") == "SUBSCRIPTION":
                 for offer in item.get("offers", []):
-                    # Если задан конкретный оффер, показываем только его
-                    if LAVA_OFFER_ID and offer["id"] != LAVA_OFFER_ID:
-                        continue
-                        
                     # Группируем цены по периодичности
                     prices_by_period = {}
                     for price in offer["prices"]:
-                        if price["periodicity"] not in prices_by_period:
-                            prices_by_period[price["periodicity"]] = {}
-                        prices_by_period[price["periodicity"]][price["currency"]] = price["amount"]
+                        periodicity = price["periodicity"]
+                        currency = price["currency"].upper()
+                        amount = float(price["amount"])
+                        
+                        # Наполняем карту цен для вебхуков
+                        new_price_map[(currency, amount)] = periodicity
+
+                        if periodicity not in prices_by_period:
+                            prices_by_period[periodicity] = {}
+                        prices_by_period[periodicity][currency] = amount
                     
+                    # Если задан конкретный оффер, показываем только его в списке подписок
+                    if LAVA_OFFER_ID and offer["id"] != LAVA_OFFER_ID:
+                        continue
+                        
                     # Преобразуем в список для удобства
                     prices = []
                     for periodicity, currencies in prices_by_period.items():
@@ -177,6 +203,11 @@ def get_available_subscriptions():
                             "prices": prices
                         })
         
+        # Обновляем глобальную карту цен
+        if new_price_map:
+            DYNAMIC_PRICE_MAP.update(new_price_map)
+            logger.info(f"Обновлена динамическая карта цен: {len(DYNAMIC_PRICE_MAP)} записей")
+            
         return subscriptions
     except Exception as e:
         logger.error(f"Ошибка при получении списка подписок: {str(e)}")
