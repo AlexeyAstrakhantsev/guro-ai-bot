@@ -169,6 +169,10 @@ def get_available_subscriptions():
         for item in data.get("items", []):
             if item.get("type") == "SUBSCRIPTION":
                 for offer in item.get("offers", []):
+                    # Если задан конкретный оффер, пропускаем все остальные
+                    if LAVA_OFFER_ID and offer["id"] != LAVA_OFFER_ID:
+                        continue
+                        
                     # Группируем цены по периодичности
                     prices_by_period = {}
                     for price in offer["prices"]:
@@ -183,10 +187,6 @@ def get_available_subscriptions():
                             prices_by_period[periodicity] = {}
                         prices_by_period[periodicity][currency] = amount
                     
-                    # Если задан конкретный оффер, показываем только его в списке подписок
-                    if LAVA_OFFER_ID and offer["id"] != LAVA_OFFER_ID:
-                        continue
-                        
                     # Преобразуем в список для удобства
                     prices = []
                     for periodicity, currencies in prices_by_period.items():
