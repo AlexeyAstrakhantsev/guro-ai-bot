@@ -56,7 +56,6 @@ security = HTTPBasic()
 USERNAME = os.getenv("WEBHOOK_USERNAME", "admin")
 PASSWORD = os.getenv("WEBHOOK_PASSWORD", "password")
 DB_PATH = DATA_DIR / "lava_payments.db"
-LAVA_OFFER_ID = os.getenv("LAVA_OFFER_ID") # Конкретный ID оффера для этого контейнера
 
 # Модели данных
 class Product(BaseModel):
@@ -372,11 +371,6 @@ async def lava_webhook(request: Request, username: str = Depends(verify_credenti
         # Пытаемся достать offerId из разных мест (зависит от версии API Lava.top)
         actual_offer_id = payload_dict.get("offerId") or payload_dict.get("product", {}).get("offerId") or payload_dict.get("product", {}).get("id")
         
-        # Проверяем, относится ли этот платеж к данному боту (если задан LAVA_OFFER_ID)
-        if LAVA_OFFER_ID and actual_offer_id and str(actual_offer_id) != str(LAVA_OFFER_ID):
-            logger.info(f"Игнорируем вебхук: offerId {actual_offer_id} не совпадает с LAVA_OFFER_ID {LAVA_OFFER_ID}")
-            return {"status": "ignored", "message": "Offer ID mismatch"}
-            
         logger.info(
             "Webhook parsed | event=%s user=%s offer=%s product='%s' amount=%s currency=%s",
             payload.eventType,
