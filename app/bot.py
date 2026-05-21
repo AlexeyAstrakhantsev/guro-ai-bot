@@ -998,8 +998,17 @@ def show_status_callback(call):
             # Показываем кнопки для тех, у кого нет подписки
             markup = types.InlineKeyboardMarkup(row_width=1)
             btn_subscribe = types.InlineKeyboardButton('💳 Оформить подписку', callback_data='show_subscribe')
+            btn_about = types.InlineKeyboardButton('🔍 Подробнее о канале', callback_data='show_about')
+            
+            # Создаем кнопку поддержки только если SUPPORT_USERNAME задан
+            if SUPPORT_USERNAME:
+                btn_support = types.InlineKeyboardButton('📞 Поддержка', url=f"https://t.me/{SUPPORT_USERNAME}")
+                markup.add(btn_subscribe, btn_about, btn_support)
+            else:
+                markup.add(btn_subscribe, btn_about)
+                
             btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
-            markup.add(btn_subscribe, btn_menu)
+            markup.add(btn_menu)
             
             bot.send_message(
                 call.message.chat.id,
