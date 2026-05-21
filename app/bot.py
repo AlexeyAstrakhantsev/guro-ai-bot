@@ -995,8 +995,17 @@ def show_status_callback(call):
                 "Оформите подписку, чтобы получить доступ к закрытому каналу!"
             )
             
-            # Показываем главное меню
-            show_main_menu(call.message)
+            # Показываем кнопки для тех, у кого нет подписки
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            btn_subscribe = types.InlineKeyboardButton('💳 Оформить подписку', callback_data='show_subscribe')
+            btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
+            markup.add(btn_subscribe, btn_menu)
+            
+            bot.send_message(
+                call.message.chat.id,
+                "Выберите действие:",
+                reply_markup=markup
+            )
             return            
     except Exception as e:
         logger.error(f"Ошибка при проверке статуса подписки: {str(e)}")
