@@ -709,12 +709,6 @@ def show_main_menu(message):
             btn_channel = types.InlineKeyboardButton('📺 Перейти в канал', url=CHANNEL_LINK)
             markup.add(btn_channel)
             
-        # Показываем кнопку отмены подписки только если статус active
-        if subscription["status"] == "active" and subscription.get("contract_id"):
-            btn_cancel = types.InlineKeyboardButton('❌ Отключить автопродление', 
-                                              callback_data=f"cancel_{subscription['contract_id']}")
-            markup.add(btn_cancel)
-            
         markup.add(btn_about)
         if btn_support: # Добавляем кнопку поддержки, если она была создана
             markup.add(btn_support)
@@ -957,8 +951,40 @@ def show_status_callback(call):
                     parse_mode="HTML"
                 )
 
-            # После вывода всех статусов показываем главное меню
-            show_main_menu(call.message)
+                # Показываем меню с кнопками управления для этой подписки
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                
+                # Пытаемся найти ссылку на канал для этой подписки
+                current_channel_link = CHANNEL_LINK
+                for conf in SUBSCRIPTIONS_CONFIG.values():
+                    if conf['channel_id'] == str(sub["channel_id"]):
+                        current_channel_link = conf.get('channel_link', CHANNEL_LINK)
+                        break
+                
+                if current_channel_link:
+                    btn_channel = types.InlineKeyboardButton('📺 Перейти в канал', url=current_channel_link)
+                    markup.add(btn_channel)
+                
+                # Показываем кнопку отмены подписки только если статус active
+                if sub["status"] == "active":
+                    btn_cancel = types.InlineKeyboardButton('❌ Отключить автопродление', 
+                                                      callback_data=f"cancel_{sub['contract_id']}")
+                    markup.add(btn_cancel)
+                
+                # Кнопка поддержки
+                if SUPPORT_USERNAME:
+                    btn_support = types.InlineKeyboardButton('📞 Поддержка', url=f"https://t.me/{SUPPORT_USERNAME}")
+                    markup.add(btn_support)
+                
+                # Кнопка главного меню
+                btn_menu = types.InlineKeyboardButton('🔙 Главное меню', callback_data='show_menu')
+                markup.add(btn_menu)
+
+                bot.send_message(
+                    call.message.chat.id,
+                    "Управление подпиской:",
+                    reply_markup=markup
+                )
             return
 
         else:
@@ -968,7 +994,7 @@ def show_status_callback(call):
                 "❌ У вас нет активной подписки.\n\n"
                 "Оформите подписку, чтобы получить доступ к закрытому каналу!"
             )
-
+            
             # Показываем главное меню
             show_main_menu(call.message)
             return            
