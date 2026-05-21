@@ -945,7 +945,6 @@ def show_status_callback(call):
 
                 bot.send_message(
                     call.message.chat.id,
-                    f"📺 <b>Канал:</b> {channel_name}\n"
                     f"{status_text}\n\n"
                     f"Доступ действует до: {end_date_str}",
                     parse_mode="HTML"
@@ -1521,7 +1520,6 @@ def status_command(message):
 
                 bot.send_message(
                     message.chat.id,
-                    f"📺 <b>Канал:</b> {channel_name}\n"
                     f"{status_text}\n\n"
                     f"Доступ действует до: {end_date_str}",
                     parse_mode="HTML"
